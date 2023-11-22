@@ -1,6 +1,6 @@
 import numpy as np
 import pygame
-from ._render import render_board
+from ._render import render_board, HEIGHT, WIDTH
 import sys
 import random
 
@@ -13,10 +13,10 @@ class Environment:
         if render:
             # pygame setup
             pygame.init()
-            self.screen = pygame.display.set_mode((720, 720))
+            self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
             self.clock = pygame.time.Clock()
             self.running = True
-            render_board(self.engine, self.screen, self.clock, None)
+            render_board(self.engine, self.screen, self.clock, None, 0)
 
     def quit_rendering(self):
         if self.render:
@@ -29,9 +29,10 @@ class Environment:
         return self.engine.board
 
     def step(self, action):
+        done = False
         if action is None:
-            return
-        self.engine.step(action)
+            return done, -1
+        done, score = self.engine.step(action)
 
         if self.render:
             anim_complete = False
@@ -42,8 +43,10 @@ class Environment:
                 self.engine,
                 self.screen,
                 self.clock,
-                action
+                action,
+                score
             )
+        return done, score
 
 class Engine:
     def __init__(self):
@@ -106,7 +109,10 @@ class Engine:
                 move_map_row[i] = i - last_i - 1
                 last_i += 1
         return new_row, move_map_row, just_merged_row
-
+    
+    def _score(self):
+        return np.sum(2**self.board[self.board != 0])
+    
     def step(self, action: int):
         self.old_board = self.board
         board = self.board.copy()
@@ -133,15 +139,18 @@ class Engine:
             self.just_merged = np.zeros((4, 4), dtype=int)
             self.move_map = np.zeros((4, 4), dtype=int)
             self.new_tiles = np.zeros((4, 4), dtype=int)
-            return
+            return False, self._score()
 
         self.board = board
         self.move_map = move_map
         self.just_merged = just_merged
 
         loc_new_tile = self._get_empty_tile()
+        if loc_new_tile is None:
+            return True, self._score()
         self.board[*loc_new_tile] = self._get_new_number()
 
         self.new_tiles = np.zeros((4, 4), dtype=int)
         self.new_tiles[*loc_new_tile] = 1
 
+        return False, self._score()
