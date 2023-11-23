@@ -1,7 +1,7 @@
-import pygame
-import random
 import math
+import random
 
+import pygame
 
 BACKGROUND_COLOR = "#d8c8b9"
 EMPTY_TILE_COLOR = "#cdc1b4"
@@ -33,9 +33,7 @@ TILE_SIZE = int((WIDTH - 5 * GAP) / 4)
 
 
 def rect_tuple(i, j):
-    """
-    Returns the rectangle tuple for the square at (i, j).
-    """
+    """Returns the rectangle tuple for the square at (i, j)."""
     return (
         int(i * (TILE_SIZE + GAP) + GAP),
         int(j * (TILE_SIZE + GAP) + GAP + TOP_GAP),
@@ -45,9 +43,7 @@ def rect_tuple(i, j):
 
 
 def render_background(screen, score):
-    """
-    Renders the background to the screen.
-    """
+    """Renders the background to the screen."""
     screen.fill(BACKGROUND_COLOR)
     for i in range(4):
         for j in range(4):
@@ -57,27 +53,23 @@ def render_background(screen, score):
                 rect_tuple(i, j),
                 border_radius=BORDER_RADIUS,
             )
-    
+
     font = pygame.font.Font(FONT, 50)
     text = font.render("Score: ", True, TEXT_COLOR)
     textRect = text.get_rect()
-    textRect.center = (
-        100, 45
-    )
+    textRect.center = (100, 45)
     screen.blit(text, textRect)
     pygame.draw.rect(screen, EMPTY_TILE_COLOR, (200, 20, 200, 60))
     font = pygame.font.Font(FONT, 40)
     text = font.render(str(score), True, TEXT_COLOR)
     textRect = text.get_rect()
-    setattr(textRect, "topright", (380, 34))
+    setattr(textRect, "topright", (380, 342))
     screen.blit(text, textRect)
     return screen
 
 
 def render_tiles(board, screen):
-    """
-    Renders the tiles to the screen.
-    """
+    """Renders the tiles to the screen."""
     for i in range(4):
         for j in range(4):
             if board[i][j] != 0:
@@ -141,36 +133,35 @@ def render_merge(board, just_merged, new_tiles, step, screen):
     diff = new_tile_size - TILE_SIZE
     for i in range(4):
         for j in range(4):
-            if just_merged[i][j] == 1 or new_tiles[i][j] == 1:
-                number = board[i][j]
-                if number == 0:
-                    print(f"ERROR: missing tile {i}, {j} during merge")
-                    continue
-                pygame.draw.rect(
-                    screen,
-                    TILE_COLORS[number],
-                    (
-                        i * (TILE_SIZE + GAP) + GAP - diff / 2,
-                        j * (TILE_SIZE + GAP) + GAP + TOP_GAP- diff / 2,
-                        new_tile_size,
-                        new_tile_size,
-                    ),
-                    border_radius=int(BORDER_RADIUS + diff / 2),
-                )
-                font = pygame.font.Font("freesansbold.ttf", 32)
-                text = font.render(str(2 ** board[i][j]), True, "black")
-                textRect = text.get_rect()
-                textRect.center = (
-                    i * (TILE_SIZE + GAP) + 90,
-                    j * (TILE_SIZE + GAP) + 90 + TOP_GAP,
-                )
-                screen.blit(text, textRect)
+            if just_merged[i][j] != 1 and new_tiles[i][j] != 1:
+                continue
+            number = board[i][j]
+            if number == 0:
+                print(f"ERROR: missing tile {i}, {j} during merge")
+                continue
+            pygame.draw.rect(
+                screen,
+                TILE_COLORS[number],
+                (
+                    i * (TILE_SIZE + GAP) + GAP - diff / 2,
+                    j * (TILE_SIZE + GAP) + GAP + TOP_GAP - diff / 2,
+                    new_tile_size,
+                    new_tile_size,
+                ),
+                border_radius=int(BORDER_RADIUS + diff / 2),
+            )
+            font = pygame.font.Font("freesansbold.ttf", 32)
+            text = font.render(str(2 ** board[i][j]), True, "black")
+            textRect = text.get_rect()
+            textRect.center = (
+                i * (TILE_SIZE + GAP) + 90,
+                j * (TILE_SIZE + GAP) + 90 + TOP_GAP,
+            )
+            screen.blit(text, textRect)
 
 
 def render_board(engine, screen, clock, action, score):
-    """
-    Renders the board to the screen.
-    """
+    """Renders the board to the screen."""
     board = engine.board
     old_board = engine.old_board
     move_map = engine.move_map
