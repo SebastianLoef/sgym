@@ -1,8 +1,10 @@
+import random
+import sys
+
 import numpy as np
 import pygame
-from ._render import render_board, HEIGHT, WIDTH
-import sys
-import random
+
+from ._render import HEIGHT, WIDTH, render_board
 
 
 class Environment:
@@ -40,13 +42,11 @@ class Environment:
                 if event.type == pygame.QUIT:
                     self.quit_rendering()
             self.screen, anim_complete = render_board(
-                self.engine,
-                self.screen,
-                self.clock,
-                action,
-                score
+                self.engine, self.screen, self.clock, action, score
             )
-        return done, score
+        reward = self.engine.board.max() - self.engine.old_board.max()
+        return done, self.engine.board, reward
+
 
 class Engine:
     def __init__(self):
@@ -81,7 +81,6 @@ class Engine:
         self.just_merged = np.zeros((4, 4), dtype=int)
         self.new_tiles = np.zeros((4, 4), dtype=int)
 
-
     def _get_valid_moves(self):
         return [0, 1, 2, 3]
 
@@ -109,10 +108,10 @@ class Engine:
                 move_map_row[i] = i - last_i - 1
                 last_i += 1
         return new_row, move_map_row, just_merged_row
-    
+
     def _score(self):
-        return np.sum(2**self.board[self.board != 0])
-    
+        return np.sum(2 ** self.board[self.board != 0])
+
     def step(self, action: int):
         self.old_board = self.board
         board = self.board.copy()
