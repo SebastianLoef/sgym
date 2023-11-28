@@ -1,5 +1,6 @@
-from ._game import Environment
 import pygame
+
+from ._game import Environment
 
 
 def play():
@@ -17,13 +18,13 @@ def play():
         action = None
         if keys[pygame.K_ESCAPE]:
             running = False
-        if keys[pygame.K_w]:
+        if keys[pygame.K_w] or keys[pygame.K_UP]:
             action = 0
-        if keys[pygame.K_s]:
+        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
             action = 2
-        if keys[pygame.K_a]:
+        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
             action = 1
-        if keys[pygame.K_d]:
+        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
             action = 3
         if keys[pygame.K_r]:
             env.reset()
