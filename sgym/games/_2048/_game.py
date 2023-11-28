@@ -45,7 +45,8 @@ class Environment:
                 self.engine, self.screen, self.clock, action, score
             )
         reward = self.engine.board.max() - self.engine.old_board.max()
-        return done, self.engine.board, reward
+        # observation, reward, terminated, truncated, info
+        return self.engine.board, reward, done, False, {}
 
 
 class Engine:
