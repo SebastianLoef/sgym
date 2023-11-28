@@ -1,5 +1,4 @@
 import random
-import sys
 
 import numpy as np
 import pygame
@@ -10,43 +9,66 @@ from ._render import HEIGHT, WIDTH, render_board
 class Environment:
     def __init__(self, render: bool) -> None:
         self.engine = Engine()
+        self.total_score = 0
         self.reset()
-        self.render = render
+        self._render = render
         if render:
-            # pygame setup
+            self._init_render()
+
+    def quit_rendering(self):
+        pygame.quit()
+        self._render = False
+
+    def _init_render(self):
+        if self._render:
             pygame.init()
             self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
             self.clock = pygame.time.Clock()
             self.running = True
             render_board(self.engine, self.screen, self.clock, None, 0)
 
-    def quit_rendering(self):
-        if self.render:
-            pygame.quit()
-            sys.exit()
-            self.render = False
+    @property
+    def render(self):
+        return self._render
+
+    @render.setter
+    def render(self, render):
+        self._render = render
+        if render:
+            self._init_render()
+            self.screen, _ = render_board(self.engine, self.screen, self.clock, None, 0)
+        else:
+            self.quit_rendering()
+
+    def _return_board(self):
+        return tuple(tuple(row) for row in self.engine.board)
 
     def reset(self):
         self.engine.reset()
-        return self.engine.board
+        self.total_score = 0
+        return self._return_board()
+
+    def get_actions(self):
+        return [0, 1, 2, 3]
 
     def step(self, action):
         done = False
         if action is None:
             return done, -1
         done, score = self.engine.step(action)
+        self.total_score += score
 
-        if self.render:
+        if self._render:
             anim_complete = False
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.quit_rendering()
             self.screen, anim_complete = render_board(
-                self.engine, self.screen, self.clock, action, score
+                self.engine, self.screen, self.clock, action, self.total_score
             )
-        reward = self.engine.board.max() - self.engine.old_board.max()
+        reward = score
         # observation, reward, terminated, truncated, info
-        return self.engine.board, reward, done, False, {}
+        return self._return_board(), reward, done, False, {"score": self.total_score}
 
 
 class Engine:
@@ -111,11 +133,20 @@ class Engine:
         return new_row, move_map_row, just_merged_row
 
     def _score(self):
-        return np.sum(2 ** self.board[self.board != 0])
+        return np.sum(self.just_merged * 2**self.board)
 
-    def step(self, action: int):
-        self.old_board = self.board
-        board = self.board.copy()
+    def _check_if_done(self):
+        """Checks if done by trying all moves and seeing if any of them change
+        the board."""
+        for action in self._get_valid_moves():
+            board, _, _, _ = self._step(action, self.board)
+            if not np.array_equal(board, self.board):
+                return False
+        return True
+
+    def _step(self, action: int, board: np.array):
+        old_board = board
+        board = board.copy()
         move_map = np.zeros((4, 4), dtype=int)
         just_merged = np.zeros((4, 4), dtype=int)
 
@@ -134,20 +165,25 @@ class Engine:
         board = np.rot90(board, -action)
         move_map = np.rot90(move_map, -action)
         just_merged = np.rot90(just_merged, -action)
+        return board, old_board, move_map, just_merged
 
-        if np.array_equal(board, self.board):
+    def step(self, action: int):
+        board, old_board, move_map, just_merged = self._step(action, self.board)
+        self.old_board = old_board
+        if np.array_equal(board, old_board):
             self.just_merged = np.zeros((4, 4), dtype=int)
             self.move_map = np.zeros((4, 4), dtype=int)
             self.new_tiles = np.zeros((4, 4), dtype=int)
+            if len(self._get_empty_tiles()) == 0 and self._check_if_done():
+                return True, self._score()
             return False, self._score()
 
+        self.old_board = self.board
         self.board = board
         self.move_map = move_map
         self.just_merged = just_merged
 
         loc_new_tile = self._get_empty_tile()
-        if loc_new_tile is None:
-            return True, self._score()
         self.board[*loc_new_tile] = self._get_new_number()
 
         self.new_tiles = np.zeros((4, 4), dtype=int)
