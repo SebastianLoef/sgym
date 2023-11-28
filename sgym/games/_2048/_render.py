@@ -63,7 +63,7 @@ def render_background(screen, score):
     font = pygame.font.Font(FONT, 40)
     text = font.render(str(score), True, TEXT_COLOR)
     textRect = text.get_rect()
-    setattr(textRect, "topright", (380, 342))
+    setattr(textRect, "topright", (380, 42))
     screen.blit(text, textRect)
     return screen
 
