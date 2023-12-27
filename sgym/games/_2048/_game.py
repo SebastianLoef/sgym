@@ -1,6 +1,7 @@
 import random
 
 import numpy as np
+import numpy.typing as npt
 import pygame
 
 from ._render import HEIGHT, WIDTH, render_board
@@ -133,7 +134,7 @@ class Engine:
         return new_row, move_map_row, just_merged_row
 
     def _score(self):
-        return np.sum(self.just_merged * 2**self.board)
+        return np.sum(self.just_merged * 2**self.board).item()
 
     def _check_if_done(self):
         """Checks if done by trying all moves and seeing if any of them change
@@ -144,7 +145,7 @@ class Engine:
                 return False
         return True
 
-    def _step(self, action: int, board: np.array):
+    def _step(self, action: int, board: npt.NDArray):
         old_board = board
         board = board.copy()
         move_map = np.zeros((4, 4), dtype=int)
