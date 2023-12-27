@@ -4,8 +4,9 @@ from ._game import Environment
 
 
 def play():
-    env = Environment(render=True)
+    env = Environment()
     env.reset()
+    env.render()
     # pygame stuff
     running = True
     # pygame setup
@@ -15,7 +16,7 @@ def play():
                 running = False
         # keys
         keys = pygame.key.get_pressed()
-        action = None
+        action: int | None = None
         if keys[pygame.K_ESCAPE]:
             running = False
         if keys[pygame.K_w] or keys[pygame.K_UP]:
@@ -29,7 +30,9 @@ def play():
         if keys[pygame.K_r]:
             env.reset()
 
-        env.step(action)
+        if action is not None:
+            env.step(action)
+            env.render()
 
     # flip() the display to put your work on screen
     # limits FPS to 60

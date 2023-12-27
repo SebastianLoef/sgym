@@ -1,192 +1,136 @@
 import random
+from typing import Callable, Optional
 
 import numpy as np
-import pygame
+import numpy.typing as npt
+import torch
+from tensordict import TensorDict, TensorDictBase
+from torchrl.data import BoundedTensorSpec, CompositeSpec, UnboundedContinuousTensorSpec
+from torchrl.envs import EnvBase
 
-from ._render import HEIGHT, WIDTH, render_board
+from ._game_logic import calc_step, reset
+from ._render import Renderer
 
 
-class Environment:
-    def __init__(self, render: bool) -> None:
-        self.engine = Engine()
-        self.total_score = 0
-        self.reset()
-        self._render = render
-        if render:
-            self._init_render()
-
-    def quit_rendering(self):
-        pygame.quit()
-        self._render = False
-
-    def _init_render(self):
-        if self._render:
-            pygame.init()
-            self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
-            self.clock = pygame.time.Clock()
-            self.running = True
-            render_board(self.engine, self.screen, self.clock, None, 0)
-
-    @property
-    def render(self):
-        return self._render
-
-    @render.setter
-    def render(self, render):
-        self._render = render
-        if render:
-            self._init_render()
-            self.screen, _ = render_board(self.engine, self.screen, self.clock, None, 0)
-        else:
-            self.quit_rendering()
-
-    def _return_board(self):
-        return tuple(tuple(row) for row in self.engine.board)
-
-    def reset(self):
-        self.engine.reset()
-        self.total_score = 0
-        return self._return_board()
-
-    def get_actions(self):
-        return [0, 1, 2, 3]
-
-    def step(self, action):
-        done = False
-        if action is None:
-            return done, -1
-        done, score = self.engine.step(action)
-        self.total_score += score
-
-        if self._render:
-            anim_complete = False
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.quit_rendering()
-            self.screen, anim_complete = render_board(
-                self.engine, self.screen, self.clock, action, self.total_score
+def make_composite_from_td(td: TensorDictBase):
+    # custom function to convert a ``tensordict`` in a similar spec structure
+    # of unbounded values.
+    composite = CompositeSpec(
+        {
+            key: make_composite_from_td(tensor)
+            if isinstance(tensor, TensorDictBase)
+            else UnboundedContinuousTensorSpec(
+                dtype=tensor.dtype, device=tensor.device, shape=tensor.shape
             )
-        reward = score
-        # observation, reward, terminated, truncated, info
-        return self._return_board(), reward, done, False, {"score": self.total_score}
+            for key, tensor in td.items()
+        },
+        shape=td.shape,
+    )
+    return composite
 
 
-class Engine:
-    def __init__(self):
-        self.board = np.zeros((4, 4), dtype=int)
-        self.old_board = np.zeros((4, 4), dtype=int)
-        self.move_map = np.zeros((4, 4), dtype=int)
-        self.just_merged = np.zeros((4, 4), dtype=int)
-        self.new_tiles = np.zeros((4, 4), dtype=int)
-        # pygame setup
+def _make_spec(self, td_params: TensorDictBase):
+    # Under the hood, this will populate self.output_spec["observation"]
+    self.observation_spec = CompositeSpec(
+        board=BoundedTensorSpec(
+            low=-0,
+            high=20,
+            shape=torch.Size([1]),
+            dtype=torch.int8,
+        ),
+        # we need to add the ``params`` to the observation specs, as we want
+        # to pass it at each step during a rollout
+        params=make_composite_from_td(td_params["params"]),
+        shape=(),
+    )
+    # since the environment is stateless, we expect the previous output as input.
+    # For this, ``EnvBase`` expects some state_spec to be available
+    self.state_spec = self.observation_spec.clone()
+    # action-spec will be automatically wrapped in input_spec when
+    # `self.action_spec = spec` will be called supported
+    self.action_spec = BoundedTensorSpec(
+        low=1,
+        high=4,
+        shape=1,
+        dtype=torch.int8,
+    )
+    self.reward_spec = UnboundedContinuousTensorSpec(
+        shape=torch.Size((*td_params.shape, 1))
+    )
 
-    def _get_new_number(self):
-        return 1 if random.random() < 0.9 else 2
 
-    def _get_empty_tiles(self):
-        return np.argwhere(self.board == 0)
+def _gen_params(self, batch_size: int | torch.Size | None = None) -> TensorDictBase:
+    """Returns a ``tensordict`` containing the physical parameters such as
+    gravitational force and torque or speed limits."""
+    batch_size = torch.Size([1])
+    td = TensorDict(
+        {
+            "params": TensorDict(
+                {},
+                [1],
+            )
+        },
+        [1],
+    )
+    if batch_size:
+        td = td.expand(batch_size).contiguous()
+    return td
 
-    def _get_empty_tile(self):
-        return random.choice(self._get_empty_tiles())
 
-    def reset(self):
-        self.board = np.zeros((4, 4), dtype=int)
-        self.new_tiles = np.zeros((4, 4), dtype=int)
-        loc = self._get_empty_tile()
-        self.new_tiles[*loc] = 1
-        self.board[*loc] = self._get_new_number()
-        loc = self._get_empty_tile()
-        self.board[*loc] = self._get_new_number()
-        self.new_tiles[*loc] = 1
-        self.old_board = self.board
+def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
+    board: npt.NDArray[np.int8] = tensordict["board"]
+    action: int = tensordict["action"]
 
-        self.move_map = np.zeros((4, 4), dtype=int)
-        self.just_merged = np.zeros((4, 4), dtype=int)
-        self.new_tiles = np.zeros((4, 4), dtype=int)
+    self.state.board = board
+    self.state.action = action
+    self.state = calc_step(self.state, action)
+    out = self.state.to_tensordict(tensordict.shape)
+    return out
 
-    def _get_valid_moves(self):
-        return [0, 1, 2, 3]
 
-    def move_seq(self, row, dir):
-        new_row = np.zeros(4, dtype=int)
-        move_map_row = np.zeros(4, dtype=int)
-        just_merged_row = np.zeros(4, dtype=int)
+def _reset(self, tensordict: Optional[TensorDictBase]) -> TensorDictBase:
+    """Resets the environment and returns the initial observation."""
+    if tensordict is None or tensordict.is_empty():
+        # if no ``tensordict`` is passed, we generate a single set of hyperparameters
+        # Otherwise, we assume that the input ``tensordict`` contains all the relevant
+        # parameters to get started.
+        tensordict = self.gen_params(batch_size=self.batch_size)
+    self.state = reset()
+    return self.state.to_tensordict(tensordict.shape)
 
-        last_i = 0
-        new_row[0] = row[0]
-        for i, val in enumerate(row[1:]):
-            i += 1
-            if val == 0:
-                continue
-            if new_row[last_i] == val:
-                new_row[last_i] = val + 1
-                move_map_row[i] = i - last_i
-                just_merged_row[last_i] = 1
-                last_i += 1
-            elif new_row[last_i] == 0:
-                new_row[last_i] = val
-                move_map_row[i] = i - last_i
-            else:
-                new_row[last_i + 1] = val
-                move_map_row[i] = i - last_i - 1
-                last_i += 1
-        return new_row, move_map_row, just_merged_row
 
-    def _score(self):
-        return np.sum(self.just_merged * 2**self.board)
+def _set_seed(self, seed: Optional[int]):
+    rng = torch.manual_seed(seed)
+    self.rng = rng
 
-    def _check_if_done(self):
-        """Checks if done by trying all moves and seeing if any of them change
-        the board."""
-        for action in self._get_valid_moves():
-            board, _, _, _ = self._step(action, self.board)
-            if not np.array_equal(board, self.board):
-                return False
-        return True
 
-    def _step(self, action: int, board: np.array):
-        old_board = board
-        board = board.copy()
-        move_map = np.zeros((4, 4), dtype=int)
-        just_merged = np.zeros((4, 4), dtype=int)
+class Environment(EnvBase):
+    metadata = {
+        "render_modes": ["human", "rgb_array"],
+        "render_fps": 30,
+    }
+    batch_locked: bool = False
+    batch_size: torch.Size = torch.Size([1])
+    _make_spec = _make_spec
+    gen_params = _gen_params
 
-        board = np.rot90(board, action)
-        for i in range(4):
-            row = board[i]
-            filled_row = sum(row != 0)
-            if filled_row == 0:
-                continue
-            if filled_row > 0:
-                new_row, move_map_row, just_merged_row = self.move_seq(row, action)
-                board[i] = new_row
-                move_map[i] = move_map_row
-                just_merged[i] = just_merged_row
+    def __init__(self, td_params=None, seed: int | None = None, device="cpu"):
+        if td_params is None:
+            td_params = self.gen_params()
 
-        board = np.rot90(board, -action)
-        move_map = np.rot90(move_map, -action)
-        just_merged = np.rot90(just_merged, -action)
-        return board, old_board, move_map, just_merged
+        super().__init__(device=device, batch_size=td_params.batch_size)
+        self._make_spec(td_params)
+        if seed is None:
+            seed = random.randint(0, 2**32 - 1)
+        self.set_seed(seed)
 
-    def step(self, action: int):
-        board, old_board, move_map, just_merged = self._step(action, self.board)
-        self.old_board = old_board
-        if np.array_equal(board, old_board):
-            self.just_merged = np.zeros((4, 4), dtype=int)
-            self.move_map = np.zeros((4, 4), dtype=int)
-            self.new_tiles = np.zeros((4, 4), dtype=int)
-            if len(self._get_empty_tiles()) == 0 and self._check_if_done():
-                return True, self._score()
-            return False, self._score()
+    # Mandatory methods: _step, _reset and _set_seed
+    _reset = _reset
+    _step: Callable = _step
+    _set_seed = _set_seed
 
-        self.old_board = self.board
-        self.board = board
-        self.move_map = move_map
-        self.just_merged = just_merged
-
-        loc_new_tile = self._get_empty_tile()
-        self.board[*loc_new_tile] = self._get_new_number()
-
-        self.new_tiles = np.zeros((4, 4), dtype=int)
-        self.new_tiles[*loc_new_tile] = 1
-
-        return False, self._score()
+    def render(self):
+        # check if self.render_logic is defined
+        if not hasattr(self, "renderer"):
+            self.renderer = Renderer()
+        self.renderer.render(self.state)
