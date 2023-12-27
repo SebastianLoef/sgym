@@ -7,6 +7,10 @@ import pygame
 from ._render import HEIGHT, WIDTH, render_board
 
 
+def added_function():
+    print("Hello from added function!")
+
+
 class Environment:
     def __init__(self, render: bool) -> None:
         self.engine = Engine()
